@@ -1,4 +1,4 @@
-# Thematic Playlist Engine — Prototype Spec
+# Mercatr — Prototype Spec
 
 ## Purpose
 
@@ -246,7 +246,7 @@ npx tsx src/cli.ts theme --theme "performative happiness" --seed-artist "Carly R
 ## Project structure
 
 ```
-thematic-playlist-engine/
+mercatr/
 ├── src/
 │   ├── cli.ts                  # CLI entry point and argument parsing
 │   ├── lastfm/
