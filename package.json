@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Thematic music playlist generator with transparent reasoning",
   "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "scripts": {
     "cli": "tsx src/cli.ts"
   },
