@@ -1,8 +1,20 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Anthropic from '@anthropic-ai/sdk';
 import { loadTemplate, defaultTemplatePath, interpolate } from './templates.js';
 import { logResponse } from './logger.js';
 import type { BuiltContext } from '../context/types.js';
 import type { PreflightEntry } from './logger.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const VOICES_DIR = path.resolve(__dirname, '../../prompts/voices');
+
+function buildVoiceBlock(voiceId?: string): string {
+  if (!voiceId) return '';
+  const contents = fs.readFileSync(path.join(VOICES_DIR, `${voiceId}.md`), 'utf-8').trim();
+  return `\n\n## Voice\n\n${contents}`;
+}
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 const DEFAULT_MAX_TOKENS = 4096;
@@ -19,6 +31,7 @@ export interface HarnessOptions {
   dryRun?: boolean;
   expand?: boolean;
   preflight?: PreflightEntry[];
+  voice?: string;
 }
 
 export interface HarnessResult {
@@ -60,6 +73,7 @@ export async function runQuery(
     query: queryString,
     diversityBlock: expand ? template.diversityExpand : template.diversityBaseline,
     expandModeRequirement: expand ? EXPAND_MODE_REQUIREMENT : '',
+    voiceBlock: buildVoiceBlock(options.voice),
   };
 
   const systemPrompt = interpolate(template.system, vars);
@@ -96,6 +110,7 @@ export async function runQuery(
     timestamp: new Date().toISOString(),
     queryType: context.queryType,
     expandMode: expand,
+    voice: options.voice ?? null,
     templatePath,
     model,
     systemPrompt,

@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import fs from 'fs';
+import path from 'path';
 import readline from 'readline';
 import { Command } from 'commander';
 import { LastfmClient } from './lastfm/client.js';
 import { buildContext } from './context/builder.js';
-import { runQuery } from './llm/harness.js';
+import { runQuery, VOICES_DIR } from './llm/harness.js';
 import { checkArtistConfidence, CONFIDENCE_TEMPLATE_PATH } from './llm/artistConfidence.js';
 import { runThemeTranslation, THEME_TRANSLATE_TEMPLATE_PATH } from './llm/themeTranslate.js';
 import { logResponse } from './llm/logger.js';
@@ -30,7 +32,8 @@ function addSharedFlags(cmd: Command): Command {
     .option('--model <model>', 'Override the Claude model')
     .option('--template <path>', 'Override the prompt template file path')
     .option('--expand', 'Use expanded genre diversity mode')
-    .option('--export [path]', 'Export playlist as XSPF file (optional path, defaults to playlist-{timestamp}.xspf)');
+    .option('--export [path]', 'Export playlist as XSPF file (optional path, defaults to playlist-{timestamp}.xspf)')
+    .option('--voice <name>', 'Load a voice persona from prompts/voices/<name>.md');
 }
 
 // explore command
@@ -183,6 +186,22 @@ async function run(options: Record<string, unknown>, queryInput: QueryInput): Pr
     const noCache = options.cache === false || options['no-cache'] === true;
     const client = new LastfmClient({ noCache });
     const model = options.model as string | undefined;
+    const voiceId = options.voice as string | undefined;
+
+    // --- Voice validation ---
+    if (voiceId) {
+      const voicePath = path.join(VOICES_DIR, `${voiceId}.md`);
+      if (!fs.existsSync(voicePath)) {
+        const available = fs.readdirSync(VOICES_DIR)
+          .filter(f => f.endsWith('.md'))
+          .map(f => f.slice(0, -3))
+          .join(', ');
+        process.stderr.write(`✗  Voice not found: "${voiceId}"\n`);
+        process.stderr.write(`   Available voices: ${available || '(none)'}\n`);
+        process.stderr.write(`   Voice files should be placed in prompts/voices/\n`);
+        process.exit(1);
+      }
+    }
 
     // --- Artist confidence preflight ---
     const preflight: PreflightEntry[] = [];
@@ -268,6 +287,7 @@ async function run(options: Record<string, unknown>, queryInput: QueryInput): Pr
       dryRun: Boolean(options.dryRun),
       expand: Boolean(options.expand),
       preflight: preflight.length > 0 ? preflight : undefined,
+      voice: voiceId,
     });
 
     if (result.dryRun) {

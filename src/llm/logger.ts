@@ -13,6 +13,7 @@ export interface LogEntry {
   timestamp: string;
   queryType: string;
   expandMode?: boolean;
+  voice?: string | null;
   templatePath?: string;
   model?: string;
   systemPrompt?: string;

@@ -7,7 +7,7 @@ import { runQuery } from '../../llm/harness.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { from, to } = req.body as { from?: string; to?: string };
+  const { from, to, voice } = req.body as { from?: string; to?: string; voice?: string };
 
   if (!from || !to) {
     res.status(400).json({ error: 'from and to are required' });
@@ -35,7 +35,7 @@ router.post('/', async (req, res) => {
 
     const query = { type: 'bridge' as const, fromArtist: resolvedFrom, toArtist: resolvedTo };
     const context = await buildContext(client, query);
-    const { response } = await runQuery(context, { expand: false });
+    const { response } = await runQuery(context, { expand: false, voice });
 
     const fromCorrected = resolvedFrom.toLowerCase() !== from.toLowerCase();
     const toCorrected = resolvedTo.toLowerCase() !== to.toLowerCase();

@@ -1,0 +1,14 @@
+{
+  "voices": [
+    {
+      "id": "knowledgeable-friend",
+      "label": "Knowledgeable Friend",
+      "description": "Enthusiastic and personal, like sharing a discovery over a drink."
+    },
+    {
+      "id": "gonzo",
+      "label": "Gonzo",
+      "description": "Opinionated, digressive, and willing to make it personal."
+    }
+  ]
+}

@@ -119,6 +119,29 @@
       border-color: #555;
     }
 
+    select {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e8e8e8;
+      font-size: 0.95rem;
+      padding: 0.6rem 0.75rem;
+      width: 100%;
+      transition: border-color 0.15s;
+      appearance: none;
+      cursor: pointer;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #555;
+    }
+
+    select option {
+      background: #1a1a1a;
+      color: #e8e8e8;
+    }
+
     .form-actions {
       display: flex;
       gap: 0.5rem;
@@ -507,6 +530,12 @@
           <label for="explore-track">Track <span style="color:#555">(optional)</span></label>
           <input type="text" id="explore-track" name="track" placeholder="e.g. Between the Bars">
         </div>
+        <div class="field">
+          <label for="explore-voice">Voice <span style="color:#555">(optional)</span></label>
+          <select id="explore-voice" name="voice">
+            <option value="">Voice (optional)</option>
+          </select>
+        </div>
         <div class="form-actions">
           <button type="submit">Generate</button>
           <button type="reset">Reset</button>
@@ -524,6 +553,12 @@
           <label for="bridge-to">To artist</label>
           <input type="text" id="bridge-to" name="to" placeholder="e.g. Frank Ocean" required>
         </div>
+        <div class="field">
+          <label for="bridge-voice">Voice <span style="color:#555">(optional)</span></label>
+          <select id="bridge-voice" name="voice">
+            <option value="">Voice (optional)</option>
+          </select>
+        </div>
         <div class="form-actions">
           <button type="submit">Generate</button>
           <button type="reset">Reset</button>
@@ -540,6 +575,12 @@
         <div class="field">
           <label for="theme-seed">Seed artist <span style="color:#555">(optional)</span></label>
           <input type="text" id="theme-seed" name="seedArtist" placeholder="e.g. Bon Iver">
+        </div>
+        <div class="field">
+          <label for="theme-voice">Voice <span style="color:#555">(optional)</span></label>
+          <select id="theme-voice" name="voice">
+            <option value="">Voice (optional)</option>
+          </select>
         </div>
         <div class="form-actions">
           <button type="submit">Generate</button>
@@ -905,21 +946,24 @@
       e.preventDefault();
       const artist = e.target.artist.value.trim();
       const track = e.target.track.value.trim();
-      submitForm('/api/explore', { artist, ...(track ? { track } : {}) }, artist, 'artist', { artist });
+      const voice = e.target['explore-voice']?.value || undefined;
+      submitForm('/api/explore', { artist, ...(track ? { track } : {}), ...(voice ? { voice } : {}) }, artist, 'artist', { artist });
     });
 
     document.getElementById('form-bridge').addEventListener('submit', e => {
       e.preventDefault();
       const from = e.target.from.value.trim();
       const to = e.target.to.value.trim();
-      submitForm('/api/bridge', { from, to }, `${from} → ${to}`, 'transition', { artistFrom: from, artistTo: to });
+      const voice = e.target['bridge-voice']?.value || undefined;
+      submitForm('/api/bridge', { from, to, ...(voice ? { voice } : {}) }, `${from} → ${to}`, 'transition', { artistFrom: from, artistTo: to });
     });
 
     document.getElementById('form-theme').addEventListener('submit', e => {
       e.preventDefault();
       const theme = e.target.theme.value.trim();
       const seedArtist = e.target.seedArtist.value.trim();
-      submitForm('/api/theme', { theme, ...(seedArtist ? { seedArtist } : {}) }, theme, 'theme', { theme });
+      const voice = e.target['theme-voice']?.value || undefined;
+      submitForm('/api/theme', { theme, ...(seedArtist ? { seedArtist } : {}), ...(voice ? { voice } : {}) }, theme, 'theme', { theme });
     });
 
     // === XSPF download (shared) ===
@@ -1088,6 +1132,26 @@
       renderSessionList();
     });
 
+    // === Voices ===
+    async function loadVoices() {
+      try {
+        const res = await fetch('/api/voices');
+        if (!res.ok) return;
+        const { voices } = await res.json();
+        const selects = ['explore-voice', 'bridge-voice', 'theme-voice'];
+        selects.forEach(id => {
+          const sel = document.getElementById(id);
+          voices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = v.label;
+            opt.title = v.description ?? '';
+            sel.appendChild(opt);
+          });
+        });
+      } catch { /* voices unavailable — dropdown stays empty */ }
+    }
+
     // === Init ===
     if (!storageAvailable) {
       historyBtn.disabled = true;
@@ -1095,6 +1159,7 @@
     } else {
       updateHistoryCount();
     }
+    loadVoices();
   </script>
 </body>
 </html>

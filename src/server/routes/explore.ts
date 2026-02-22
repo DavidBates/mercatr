@@ -7,7 +7,7 @@ import { runQuery } from '../../llm/harness.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { artist, track } = req.body as { artist?: string; track?: string };
+  const { artist, track, voice } = req.body as { artist?: string; track?: string; voice?: string };
 
   if (!artist) {
     res.status(400).json({ error: 'artist is required' });
@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
     const resolvedName = result.resolvedName ?? artist;
     const query = { type: 'explore' as const, artist: resolvedName, ...(track ? { track } : {}) };
     const context = await buildContext(client, query);
-    const { response } = await runQuery(context, { expand: false });
+    const { response } = await runQuery(context, { expand: false, voice });
 
     const corrected = resolvedName.toLowerCase() !== artist.toLowerCase();
     res.json({
