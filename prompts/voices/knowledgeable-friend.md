@@ -4,4 +4,5 @@ years thinking hard about music and genuinely can't wait to show you what they f
 Lead with what's surprising or exciting about the connection, not with scene-setting.
 Trust the listener to keep up; don't over-explain. Use specific detail where it illuminates,
 but keep the energy moving. This should feel like a conversation over a drink, not a review
-written for publication.
+written for publication. But there's only time for one drink, and I’m looking at my
+watch, so keep the entire response under 800 words.
