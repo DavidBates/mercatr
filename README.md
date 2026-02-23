@@ -103,12 +103,42 @@ npx tsx src/cli.ts theme --theme "loneliness in crowded places"
 
 # Theme grounded by a seed artist
 npx tsx src/cli.ts theme --theme "performative happiness" --seed-artist "Carly Rae Jepsen"
+
+# Theme grounded by multiple seed artists (repeat flag)
+npx tsx src/cli.ts theme --theme "quiet resilience" \
+  --seed-artist "Elliott Smith" \
+  --seed-artist "Nick Drake" \
+  --seed-artist "Bon Iver"
+
+# Theme grounded by multiple seed artists (variadic flag)
+npx tsx src/cli.ts theme --theme "quiet resilience" \
+  --seed-artists "Elliott Smith" "Nick Drake" "Bon Iver"
 ```
 
 | Option | Required | Description |
 |---|---|---|
 | `--theme <theme>` | Yes | Theme or mood |
-| `--seed-artist <artist>` | No | Grounds the theme around a specific artist's world |
+| `--seed-artist <artist>` | No | Grounds the theme around seed artist(s); repeat flag for multiple |
+| `--seed-artists <artists...>` | No | Variadic alternative for multiple seed artists |
+
+### `playlist-expand` — Expand a YouTube Music playlist
+
+Takes a YouTube Music playlist, analyzes each source track with the `explore` pipeline, summarizes the shared theme, then runs the `theme` pipeline to recommend exactly 5 new songs with reasoning.
+
+```bash
+npx tsx src/cli.ts playlist-expand \
+  --playlist "https://music.youtube.com/playlist?list=PLxH-SuyTFpHHyxtp5NA73fyXNyU3Oe5v7"
+```
+
+| Option | Required | Description |
+|---|---|---|
+| `--playlist <url-or-id>` | Yes | YouTube Music playlist URL or playlist ID |
+| `--max-tracks <count>` | No | Random sample size of source tracks to analyze (default: `5`) |
+| `--verbose` | No | Print per-track thematic summaries to stderr |
+| `--model <model>` | No | Override the LLM model |
+| `--expand` | No | Apply expanded diversity constraints to LLM stages |
+| `--template <path>` | No | Override the final playlist expansion template |
+| `--export [path]` | No | Export recommended tracks as XSPF |
 
 ## Shared flags
 
@@ -150,6 +180,10 @@ The resolved name (not the original input) is used for all downstream lookups an
 The `theme` command translates abstract themes into Last.fm folksonomy tags before querying. For example, "loneliness in crowded places" might become tags like `melancholy`, `introspective`, `urban`, `ambient`, `post-punk`. This bridges the gap between how people describe moods and how Last.fm users tag music.
 
 The main prompt receives both the original theme and the translation metadata, so the model knows the data is one step removed from the user's intent.
+
+### Playlist expansion from YouTube Music
+
+`playlist-expand` fetches tracks from a YouTube Music playlist, randomly samples 5 tracks by default (or `--max-tracks`), runs a thematic analysis per sampled track, aggregates Last.fm similar artists across those tracks into seed artists, condenses analyses into a single playlist-level theme sentence, then generates 5 new recommendations grounded in that musical neighborhood.
 
 ### Genre diversity controls
 
@@ -205,6 +239,8 @@ Prompts are stored as Markdown files in `prompts/` and can be edited without rec
 | `prompts/explore.md` | `explore` |
 | `prompts/bridge.md` | `bridge` |
 | `prompts/theme.md` | `theme` |
+| `prompts/playlist-expand.md` | `playlist-expand` final recommendation prompt |
+| `prompts/playlist-theme-summary.md` | `playlist-expand` theme condensation step |
 | `prompts/artist-confidence.md` | Artist confidence preflight |
 | `prompts/theme-translate.md` | Theme translation preflight |
 | `prompts/track-extract.md` | Track extraction for XSPF |
@@ -273,6 +309,7 @@ ls logs/
 | `OPENAI_COMPAT_API_KEY` | OpenAI-compat only | — | API key for OpenAI-compatible API |
 | `OPENAI_COMPAT_MODEL` | OpenAI-compat only | — | Default model when `LLM_PROVIDER=openai-compat` |
 | `OPENAI_COMPAT_TRACK_EXTRACT_MODEL` | No | `OPENAI_COMPAT_MODEL` | Track-extract model when `LLM_PROVIDER=openai-compat` |
+| `YTMUSIC_COOKIES` | No | — | Optional browser cookies string for private/restricted YouTube Music playlists |
 | `LASTFM_CACHE_TTL_HOURS` | No | `24` | Cache TTL (accepts decimals, e.g. `0.5` for 30 min) |
 | `MIN_TAG_COUNT` | No | `10` | Filters out noisy low-count tags from Last.fm |
 | `BASIC_AUTH_USER` | Web only | — | Username for Basic Auth (required by `npm run serve`) |

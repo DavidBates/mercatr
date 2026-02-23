@@ -8,7 +8,11 @@ import { runQuery } from '../../llm/harness.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { theme, seedArtist } = req.body as { theme?: string; seedArtist?: string };
+  const { theme, seedArtist, seedArtists } = req.body as {
+    theme?: string;
+    seedArtist?: string;
+    seedArtists?: string[];
+  };
 
   if (!theme) {
     res.status(400).json({ error: 'theme is required' });
@@ -18,14 +22,37 @@ router.post('/', async (req, res) => {
   try {
     const client = new LastfmClient({ noCache: false });
 
-    let resolvedSeed: string | undefined;
-    if (seedArtist) {
-      const { result } = await checkArtistConfidence(seedArtist, client);
-      if (result.confidence === 'low') {
-        res.status(404).json({ error: result.reasoning, type: 'artist_not_found' });
+    const normalizedSeedArtists = [
+      ...(Array.isArray(seedArtists) ? seedArtists : []),
+      ...(seedArtist ? [seedArtist] : []),
+    ]
+      .map(name => name.trim())
+      .filter(name => name.length > 0);
+
+    const dedupedSeedArtists = [...new Set(normalizedSeedArtists)];
+
+    let resolvedSeedArtists: string[] = [];
+    if (dedupedSeedArtists.length > 0) {
+      const confidenceResults = await Promise.all(
+        dedupedSeedArtists.map(async artist => ({
+          original: artist,
+          confidence: await checkArtistConfidence(artist, client),
+        }))
+      );
+
+      const lowConfidence = confidenceResults.find(entry => entry.confidence.result.confidence === 'low');
+      if (lowConfidence) {
+        res.status(404).json({
+          error: lowConfidence.confidence.result.reasoning,
+          type: 'artist_not_found',
+          artist: lowConfidence.original,
+        });
         return;
       }
-      resolvedSeed = result.resolvedName ?? seedArtist;
+
+      resolvedSeedArtists = confidenceResults.map(
+        entry => entry.confidence.result.resolvedName ?? entry.original
+      );
     }
 
     const { result: translation } = await runThemeTranslation(theme);
@@ -36,17 +63,20 @@ router.post('/', async (req, res) => {
       theme,
       translatedTags,
       translateMetadata: { moodTerms, genreHints },
-      ...(resolvedSeed ? { seedArtist: resolvedSeed } : {}),
+      ...(resolvedSeedArtists.length > 0 ? { seedArtists: resolvedSeedArtists } : {}),
     };
 
     const context = await buildContext(client, query);
     const { response } = await runQuery(context, { expand: false });
 
-    const seedCorrected = resolvedSeed && seedArtist && resolvedSeed.toLowerCase() !== seedArtist.toLowerCase();
+    const seedCorrected = dedupedSeedArtists.length > 0
+      && dedupedSeedArtists.some((artist, index) =>
+        resolvedSeedArtists[index]?.toLowerCase() !== artist.toLowerCase()
+      );
 
     res.json({
       response,
-      ...(seedCorrected ? { resolvedArtist: resolvedSeed, originalInput: seedArtist } : {}),
+      ...(seedCorrected ? { resolvedArtist: resolvedSeedArtists, originalInput: dedupedSeedArtists } : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error';
