@@ -38,8 +38,8 @@ function buildQueryString(context: BuiltContext): string {
     case 'bridge':
       return `Find thematic bridges between ${query.fromArtist} and ${query.toArtist}`;
     case 'theme':
-      return query.seedArtist
-        ? `Build a thematic playlist around "${query.theme}", grounded in the world of ${query.seedArtist}`
+      return query.seedArtists && query.seedArtists.length > 0
+        ? `Build a thematic playlist around "${query.theme}", grounded in the worlds of ${query.seedArtists.join(', ')}`
         : `Build a thematic playlist around "${query.theme}"`;
   }
 }

@@ -9,6 +9,7 @@ import { runThemeTranslation, THEME_TRANSLATE_TEMPLATE_PATH } from './llm/themeT
 import { logResponse } from './llm/logger.js';
 import { extractTracks } from './llm/trackExtract.js';
 import { writeXspf } from './export/xspf.js';
+import { expandYoutubeMusicPlaylist, PLAYLIST_EXPAND_TEMPLATE_PATH } from './playlist/expander.js';
 import type { PreflightEntry } from './llm/logger.js';
 import type { PreflightEntry as ArtistPreflightEntry, ConfidenceResult } from './llm/artistConfidence.js';
 import type { ThemeTranslateEntry } from './llm/themeTranslate.js';
@@ -20,6 +21,26 @@ program
   .name('mercatr')
   .description('Thematic music playlist generator')
   .version('0.1.0');
+
+function collectSeedArtist(value: string, previous?: string[]): string[] {
+  return [...(previous ?? []), value];
+}
+
+function normalizeSeedArtists(options: Record<string, unknown>): string[] | undefined {
+  const fromRepeated = Array.isArray(options.seedArtist)
+    ? options.seedArtist
+    : (typeof options.seedArtist === 'string' ? [options.seedArtist] : []);
+  const fromVariadic = Array.isArray(options.seedArtists)
+    ? options.seedArtists
+    : (typeof options.seedArtists === 'string' ? [options.seedArtists] : []);
+
+  const normalized = [...fromRepeated, ...fromVariadic]
+    .map(value => String(value).trim())
+    .filter(value => value.length > 0);
+
+  if (normalized.length === 0) return undefined;
+  return [...new Set(normalized)];
+}
 
 // Shared flags
 function addSharedFlags(cmd: Command): Command {
@@ -73,21 +94,110 @@ const themeCmd = addSharedFlags(
     .command('theme')
     .description('Build a thematic playlist around a theme or mood')
     .requiredOption('--theme <theme>', 'Theme or mood')
-    .option('--seed-artist <artist>', 'Optional seed artist to ground the theme')
+    .option(
+      '--seed-artist <artist>',
+      'Optional seed artist (repeat to provide multiple artists)',
+      collectSeedArtist
+    )
+    .option('--seed-artists <artists...>', 'Optional seed artists list')
 );
 
 themeCmd.action(async (options) => {
+  const seedArtists = normalizeSeedArtists(options as Record<string, unknown>);
   await run(options, {
     type: 'theme',
     theme: options.theme,
-    seedArtist: options.seedArtist,
+    ...(seedArtists ? { seedArtists } : {}),
   });
+});
+
+const playlistExpandCmd = program
+  .command('playlist-expand')
+  .description('Expand a YouTube Music playlist with five new thematic recommendations')
+  .requiredOption('--playlist <url-or-id>', 'YouTube Music playlist URL or playlist ID')
+  .option('--verbose', 'Print per-track thematic summaries to stderr')
+  .option('--no-cache', 'Bypass Last.fm cache for this run')
+  .option('--model <model>', 'Override the LLM model')
+  .option('--template <path>', 'Override the playlist expansion prompt template file path')
+  .option('--expand', 'Use expanded genre diversity mode')
+  .option('--max-tracks <count>', 'Random sample size (default: 5 tracks)', (value: string) => {
+    const parsed = parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error('--max-tracks must be a positive integer');
+    }
+    return parsed;
+  })
+  .option('--export [path]', 'Export playlist expansion as an XSPF file');
+
+playlistExpandCmd.action(async (options) => {
+  await runPlaylistExpand(options);
 });
 
 type QueryInput =
   | { type: 'explore'; artist: string; track?: string }
   | { type: 'bridge'; fromArtist: string; toArtist: string }
-  | { type: 'theme'; theme: string; seedArtist?: string };
+  | { type: 'theme'; theme: string; seedArtists?: string[] };
+
+async function runPlaylistExpand(options: Record<string, unknown>): Promise<void> {
+  try {
+    const noCache = options.cache === false || options['no-cache'] === true;
+    const model = options.model as string | undefined;
+
+    process.stderr.write('Fetching and analyzing YouTube Music playlist...\n');
+
+    const result = await expandYoutubeMusicPlaylist({
+      playlist: options.playlist as string,
+      model,
+      templatePath: (options.template as string | undefined) ?? PLAYLIST_EXPAND_TEMPLATE_PATH,
+      noCache,
+      expand: Boolean(options.expand),
+      maxTracks: options.maxTracks as number | undefined,
+    });
+
+    process.stderr.write(
+      `Analyzed ${result.analyzedTrackCount}/${result.sourceTrackCount} playlist tracks\n`
+    );
+    if (result.skippedTracks.length > 0) {
+      process.stderr.write(`Skipped ${result.skippedTracks.length} track(s)\n`);
+    }
+
+    if (options.verbose) {
+      process.stderr.write('\n--- Per-Track Themes ---\n');
+      result.trackThemes.forEach((entry, index) => {
+        process.stderr.write(
+          `${index + 1}. "${entry.track}" by ${entry.artist}: ${entry.themeSentence}\n`
+        );
+      });
+      process.stderr.write('--- End Per-Track Themes ---\n\n');
+    }
+
+    process.stdout.write(`# Playlist Expansion: ${result.playlistTitle}\n`);
+    process.stdout.write(`Derived theme: ${result.overallTheme}\n\n`);
+    if (result.seedArtistsUsed.length > 0) {
+      process.stderr.write(`Using similar artists as seeds: ${result.seedArtistsUsed.join(', ')}\n`);
+    }
+    process.stdout.write(result.response + '\n');
+
+    if (options.export) {
+      process.stderr.write('Extracting track list...\n');
+      const tracks = await extractTracks(result.response, model);
+
+      const exportPath = typeof options.export === 'string'
+        ? options.export
+        : `playlist-expand-${Date.now()}.xspf`;
+
+      writeXspf(tracks, exportPath, {
+        title: `Playlist Expansion: ${result.playlistTitle}`,
+        description: 'Generated by mercatr playlist-expand',
+      });
+      process.stderr.write(`Exported ${tracks.length} tracks to ${exportPath}\n`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: ${message}\n`);
+    process.exit(1);
+  }
+}
 
 function askUser(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
@@ -212,14 +322,21 @@ async function run(options: Record<string, unknown>, queryInput: QueryInput): Pr
       (mutableQuery as { type: 'bridge'; fromArtist: string; toArtist: string }).toArtist = toResolved.resolvedName;
     }
 
-    if (mutableQuery.type === 'theme' && mutableQuery.seedArtist) {
-      const resolved = await resolveArtist(mutableQuery.seedArtist, client, mutableQuery.type, model);
-      preflight.push(resolved.preflightEntry);
-      if (resolved.halted) {
+    if (mutableQuery.type === 'theme' && mutableQuery.seedArtists && mutableQuery.seedArtists.length > 0) {
+      const resolvedSeedArtists = await Promise.all(
+        mutableQuery.seedArtists.map(seedArtist =>
+          resolveArtist(seedArtist, client, mutableQuery.type, model)
+        )
+      );
+      preflight.push(...resolvedSeedArtists.map(entry => entry.preflightEntry));
+
+      if (resolvedSeedArtists.some(entry => entry.halted)) {
         logResponse({ timestamp: new Date().toISOString(), queryType: mutableQuery.type, preflight, halted: true });
         process.exit(1);
       }
-      (mutableQuery as { type: 'theme'; theme: string; seedArtist?: string }).seedArtist = resolved.resolvedName;
+
+      (mutableQuery as { type: 'theme'; theme: string; seedArtists?: string[] }).seedArtists = resolvedSeedArtists
+        .map(entry => entry.resolvedName);
     }
 
     // --- Theme-translate preflight ---
@@ -297,7 +414,9 @@ async function run(options: Record<string, unknown>, queryInput: QueryInput): Pr
             title = `Bridge: ${mutableQuery.fromArtist} → ${mutableQuery.toArtist}`;
             break;
           case 'theme':
-            title = `Theme: ${mutableQuery.theme}`;
+            title = mutableQuery.seedArtists && mutableQuery.seedArtists.length > 0
+              ? `Theme: ${mutableQuery.theme} (seeded by ${mutableQuery.seedArtists.join(', ')})`
+              : `Theme: ${mutableQuery.theme}`;
             break;
         }
 

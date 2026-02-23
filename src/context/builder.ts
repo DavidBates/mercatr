@@ -25,6 +25,29 @@ function formatSimilarArtists(artists: SimilarArtist[], max = 10): string {
     .join(', ');
 }
 
+function aggregateSeedTags(tagGroups: Tag[][]): Tag[] {
+  const merged = new Map<string, Tag>();
+
+  for (const tags of tagGroups) {
+    for (const tag of tags) {
+      const key = tag.name.trim().toLowerCase();
+      if (!key) continue;
+      const existing = merged.get(key);
+      if (existing) {
+        existing.count += tag.count;
+      } else {
+        merged.set(key, {
+          name: key,
+          count: tag.count,
+          url: tag.url,
+        });
+      }
+    }
+  }
+
+  return Array.from(merged.values()).sort((a, b) => b.count - a.count);
+}
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }
@@ -49,7 +72,7 @@ async function buildExploreContext(
   const [artistTags, artistInfo, similarArtists] = await Promise.all([
     client.getArtistTopTags(artist),
     client.getArtistInfo(artist),
-    client.getSimilarArtists(artist, 10),
+    client.getSimilarArtists(artist, 10).catch(() => [] as SimilarArtist[]),
   ]);
 
   let trackTags: Tag[] = [];
@@ -94,6 +117,7 @@ async function buildExploreContext(
     query,
     contextText: lines.join('\n'),
     summary,
+    similarArtists,
   };
 }
 
@@ -157,7 +181,7 @@ async function buildThemeContext(
   client: LastfmClient,
   query: Extract<Query, { type: 'theme' }>
 ): Promise<BuiltContext> {
-  const { theme, seedArtist, translatedTags, translateMetadata } = query;
+  const { theme, seedArtists, translatedTags, translateMetadata } = query;
 
   const lines: string[] = [];
   lines.push(`## Theme: "${theme}"`);
@@ -253,16 +277,43 @@ async function buildThemeContext(
   }
 
   let seedContext = '';
-  if (seedArtist) {
-    const [seedTags, seedInfo] = await Promise.all([
-      client.getArtistTopTags(seedArtist),
-      client.getArtistInfo(seedArtist),
-    ]);
-    seedContext = [
-      `\n## Seed Artist: ${seedArtist}`,
-      `Tags: ${formatTags(seedTags)}`,
-      seedInfo.bio.summary ? `Bio: ${stripHtml(seedInfo.bio.summary).slice(0, 300)}` : '',
-    ].filter(Boolean).join('\n');
+  const normalizedSeedArtists = seedArtists?.filter(name => name.trim().length > 0) ?? [];
+  if (normalizedSeedArtists.length > 0) {
+    const seedData = await Promise.all(
+      normalizedSeedArtists.map(async seedArtist => {
+        const [tags, info] = await Promise.all([
+          client.getArtistTopTags(seedArtist),
+          client.getArtistInfo(seedArtist),
+        ]);
+        return { seedArtist, tags, info };
+      })
+    );
+
+    if (seedData.length === 1) {
+      const seed = seedData[0];
+      seedContext = [
+        `\n## Seed Artist: ${seed.seedArtist}`,
+        `Tags: ${formatTags(seed.tags)}`,
+        seed.info.bio.summary ? `Bio: ${stripHtml(seed.info.bio.summary).slice(0, 300)}` : '',
+      ].filter(Boolean).join('\n');
+    } else {
+      const aggregatedTags = aggregateSeedTags(seedData.map(seed => seed.tags));
+      const linesForSeedContext: string[] = [];
+      linesForSeedContext.push(`\n## Seed Artists (${seedData.length})`);
+      if (aggregatedTags.length > 0) {
+        linesForSeedContext.push(`Aggregated tags: ${formatTags(aggregatedTags, 20)}`);
+      }
+
+      for (const seed of seedData) {
+        linesForSeedContext.push(`\n### ${seed.seedArtist}`);
+        linesForSeedContext.push(`Tags: ${formatTags(seed.tags)}`);
+        if (seed.info.bio.summary) {
+          linesForSeedContext.push(`Bio: ${stripHtml(seed.info.bio.summary).slice(0, 300)}`);
+        }
+      }
+
+      seedContext = linesForSeedContext.join('\n');
+    }
   }
 
   if (seedContext) {
@@ -272,7 +323,7 @@ async function buildThemeContext(
   const summary = [
     `Top artists for tag: ${topArtists.length}`,
     `Top tracks for tag: ${topTracks.length}`,
-    seedArtist ? `Seed artist: ${seedArtist}` : null,
+    normalizedSeedArtists.length > 0 ? `Seed artists: ${normalizedSeedArtists.length}` : null,
   ].filter(Boolean).join(', ');
 
   return {

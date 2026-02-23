@@ -481,6 +481,7 @@
       <button role="tab" id="tab-explore" aria-selected="true" aria-controls="panel-explore">Explore</button>
       <button role="tab" id="tab-bridge" aria-selected="false" aria-controls="panel-bridge">Bridge</button>
       <button role="tab" id="tab-theme" aria-selected="false" aria-controls="panel-theme">Theme</button>
+      <button role="tab" id="tab-expand" aria-selected="false" aria-controls="panel-expand">Expand</button>
     </nav>
 
     <section role="tabpanel" id="panel-explore" aria-labelledby="tab-explore" class="active">
@@ -526,6 +527,29 @@
         <div class="field">
           <label for="theme-seed">Seed artist <span style="color:#555">(optional)</span></label>
           <input type="text" id="theme-seed" name="seedArtist" placeholder="e.g. Bon Iver">
+        </div>
+        <div class="form-actions">
+          <button type="submit">Generate</button>
+          <button type="reset">Reset</button>
+        </div>
+      </form>
+    </section>
+
+    <section role="tabpanel" id="panel-expand" aria-labelledby="tab-expand">
+      <form id="form-expand">
+        <div class="field">
+          <label for="expand-playlist">Playlist URL or ID</label>
+          <input
+            type="text"
+            id="expand-playlist"
+            name="playlist"
+            placeholder="https://music.youtube.com/playlist?list=..."
+            required
+          >
+        </div>
+        <div class="field">
+          <label for="expand-max-tracks">Sample size <span style="color:#555">(optional, default: 5 random tracks)</span></label>
+          <input type="text" id="expand-max-tracks" name="maxTracks" placeholder="e.g. 8">
         </div>
         <div class="form-actions">
           <button type="submit">Generate</button>
@@ -651,6 +675,10 @@
       const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       if (mode === 'artist') return `Artist: ${toTitleCase(inputs.artist)} — ${date}`;
       if (mode === 'theme') return `Theme: ${toTitleCase(inputs.theme)} — ${date}`;
+      if (mode === 'playlist-expand') {
+        const name = inputs.playlistTitle ?? inputs.playlist ?? 'Playlist';
+        return `Expand: ${name} — ${date}`;
+      }
       return `${toTitleCase(inputs.artistFrom)} → ${toTitleCase(inputs.artistTo)} — ${date}`;
     }
 
@@ -792,7 +820,14 @@
           return;
         }
 
-        showResults(data, title, mode, inputs);
+        const resolvedTitle = data.playlistTitle
+          ? `Playlist Expansion: ${data.playlistTitle}`
+          : title;
+        const resolvedInputs = mode === 'playlist-expand'
+          ? { ...inputs, ...(data.playlistTitle ? { playlistTitle: data.playlistTitle } : {}) }
+          : inputs;
+
+        showResults(data, resolvedTitle, mode, resolvedInputs);
       } catch {
         showError('Network error. Please try again.');
       } finally {
@@ -823,6 +858,34 @@
       const theme = e.target.theme.value.trim();
       const seedArtist = e.target.seedArtist.value.trim();
       submitForm('/api/theme', { theme, ...(seedArtist ? { seedArtist } : {}) }, theme, 'theme', { theme });
+    });
+
+    document.getElementById('form-expand').addEventListener('submit', e => {
+      e.preventDefault();
+      const playlist = e.target.playlist.value.trim();
+      const maxTracksRaw = e.target.maxTracks.value.trim();
+
+      if (!playlist) {
+        showError('Playlist URL or ID is required.');
+        return;
+      }
+
+      let maxTracks;
+      if (maxTracksRaw) {
+        maxTracks = Number.parseInt(maxTracksRaw, 10);
+        if (!Number.isInteger(maxTracks) || maxTracks <= 0) {
+          showError('Max tracks must be a positive integer.');
+          return;
+        }
+      }
+
+      submitForm(
+        '/api/playlist-expand',
+        { playlist, ...(maxTracks ? { maxTracks } : {}) },
+        'Playlist Expansion',
+        'playlist-expand',
+        { playlist }
+      );
     });
 
     // === XSPF download (shared) ===
@@ -960,6 +1023,10 @@
     function formatMeta(session) {
       if (session.mode === 'artist') return `Artist exploration · ${session.inputs.artist}`;
       if (session.mode === 'theme') return `Theme · ${session.inputs.theme}`;
+      if (session.mode === 'playlist-expand') {
+        const label = session.inputs.playlistTitle ?? session.inputs.playlist ?? 'Playlist';
+        return `Playlist expansion · ${label}`;
+      }
       return `Transition · ${session.inputs.artistFrom} → ${session.inputs.artistTo}`;
     }
 

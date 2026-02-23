@@ -1,3 +1,5 @@
+import type { SimilarArtist } from '../lastfm/types.js';
+
 export type QueryType = 'explore' | 'bridge' | 'theme';
 
 export interface ExploreQuery {
@@ -15,7 +17,7 @@ export interface BridgeQuery {
 export interface ThemeQuery {
   type: 'theme';
   theme: string;
-  seedArtist?: string;
+  seedArtists?: string[];
   translatedTags?: string[];
   translateMetadata?: {
     moodTerms: string[];
@@ -31,4 +33,5 @@ export interface BuiltContext {
   contextText: string;
   summary: string;
   translationResultCount?: number;
+  similarArtists?: SimilarArtist[];
 }
